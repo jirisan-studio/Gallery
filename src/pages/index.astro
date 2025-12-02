@@ -1,16 +1,54 @@
 ---
+import { getGalleryPosts } from "../lib/contentful";
+// Tailwind CSS 연결 (혹시 global.css를 아직 안 만드셨다면 자동 설정된 기본값 사용)
 
+// 1. Contentful에서 데이터 가져오기
+const posts = await getGalleryPosts();
 ---
 
-<html lang="en">
-	<head>
-		<meta charset="utf-8" />
-		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-		<meta name="viewport" content="width=device-width" />
-		<meta name="generator" content={Astro.generator} />
-		<title>Astro</title>
-	</head>
-	<body>
-		<h1>Astro</h1>
-	</body>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width" />
+    <title>나의 드론 갤러리</title>
+  </head>
+  <body class="bg-gray-900 text-white min-h-screen p-8">
+    
+    <header class="mb-12 text-center">
+      <h1 class="text-4xl font-bold mb-2">🚁 My Drone Gallery</h1>
+      <p class="text-gray-400">지리산의 아름다운 풍경을 담았습니다.</p>
+    </header>
+
+    <!-- 갤러리 리스트 (Masonry 느낌의 Grid) -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      {posts.map((post) => (
+        <article class="bg-gray-800 rounded-xl overflow-hidden shadow-lg hover:transform hover:scale-[1.02] transition-all duration-300">
+          
+          <!-- 이미지 영역 -->
+          {post.fields.coverImage && (
+            <div class="relative h-64 bg-gray-700">
+              <img 
+                src={post.fields.coverImage.fields.file.url} 
+                alt={post.fields.title} 
+                class="w-full h-full object-cover"
+              />
+            </div>
+          )}
+
+          <!-- 텍스트 영역 -->
+          <div class="p-5">
+            <h2 class="text-xl font-bold mb-2">{post.fields.title}</h2>
+            
+            {/* 유튜브 링크가 있으면 버튼 표시 */}
+            {post.fields.youtubeUrl && (
+              <a href={post.fields.youtubeUrl} target="_blank" class="inline-block mt-2 text-sm text-blue-400 hover:text-blue-300 font-semibold">
+                ▶ 유튜브 영상 보기
+              </a>
+            )}
+          </div>
+        </article>
+      ))}
+    </div>
+
+  </body>
 </html>
