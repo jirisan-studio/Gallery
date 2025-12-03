@@ -9,7 +9,7 @@ export const contentfulClient = createClient({
 export async function getGalleryPosts() {
   const entries = await contentfulClient.getEntries({
     // 👇 사용자님이 만드신 모델 ID (대소문자 정확해야 합니다!)
-    content_type: "Parkmedia", 
+    content_type: "parkmedia", 
   });
   return entries.items;
 }
