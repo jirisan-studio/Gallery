@@ -1,83 +1,304 @@
 ---
 import { getGalleryPosts } from "../lib/contentful";
+import "../styles/global.css"; 
 
-// 1. Contentful에서 데이터 가져오기
 const posts = await getGalleryPosts();
+const categories = ["전체", ...new Set(posts.map(p => p.fields.category || "기타"))];
+
+// 대문용 이미지 추출 (최대 5장)
+const heroImages = posts
+  .map(p => {
+    const field = p.fields.multymedia || p.fields.media || p.fields.coverImage;
+    let url = null;
+
+    if (Array.isArray(field) && field.length > 0) {
+        url = field[0].fields.file.url;
+    } else if (field?.fields?.file?.url) {
+        url = field.fields.file.url;
+    }
+
+    if (url) {
+        if (url.startsWith('//')) url = 'https:' + url;
+        return url; // <img> 태그에 넣을 때는 encodeURI 안 해도 브라우저가 알아서 합니다.
+    }
+    return null;
+  })
+  .filter(url => url !== null)
+  .slice(0, 5);
 ---
 
 <html lang="ko">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width" />
-    <title>나의 드론 갤러리</title>
-  </head>
-  <body class="bg-slate-900 text-white min-h-screen p-6 font-sans">
-    
-    <header class="max-w-6xl mx-auto mb-12 pt-10 text-center">
-      <h1 class="text-4xl md:text-5xl font-extrabold mb-4 text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-emerald-400">
-        🚁 My Drone Gallery
-      </h1>
-      <p class="text-slate-400 text-lg">지리산의 아름다운 풍경을 기록합니다.</p>
-    </header>
-
-    <!-- 갤러리 리스트 -->
-    <div class="max-w-6xl mx-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
-      {posts.map((post) => {
-        // ✨ [핵심 수정] 이미지 주소 앞에 'https:' 붙여주기
-        let imgUrl = null;
+    <title>ParkMedia Gallery</title>
+    <style>
+        /* 슬라이드 애니메이션 (이미지 태그용) */
+        .hero-img {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            object-fit: cover; /* 배경처럼 꽉 차게 */
+            opacity: 0;
+            transition: opacity 1.5s ease-in-out;
+            z-index: -2; /* 제일 뒤 */
+        }
+        .hero-img.active { opacity: 1; }
         
-        // Contentful 데이터 구조에 따라 필드 찾기 (coverImage, image, media 등)
-        const imageField = post.fields.coverImage || post.fields.image || post.fields.media;
+        /* 오버레이 (사진 어둡게) */
+        .hero-overlay {
+            position: absolute;
+            inset: 0;
+            background-color: rgba(0, 0, 0, 0.4);
+            z-index: -1;
+        }
+    </style>
+  </head>
+  <body class="bg-slate-900 text-white font-sans">
+    
+    <!-- 대문 섹션 -->
+    <section class="relative w-full h-screen flex flex-col items-center justify-center overflow-hidden">
+        
+        <!-- ✨ [핵심 수정] 배경을 CSS가 아니라 실제 <img> 태그로 넣음 (무조건 나옴) -->
+        <div id="hero-bg" class="absolute inset-0 w-full h-full">
+            {heroImages.length > 0 ? (
+                heroImages.map((img, index) => (
+                    <img src={img} class={`hero-img ${index === 0 ? 'active' : ''}`} alt="Background" />
+                ))
+            ) : (
+                <div class="absolute inset-0 bg-gradient-to-br from-slate-800 to-slate-900 -z-20"></div>
+            )}
+            <!-- 어두운 막 -->
+            <div class="hero-overlay"></div>
+        </div>
 
-        if (imageField?.fields?.file?.url) {
-          imgUrl = imageField.fields.file.url;
-          // 주소가 //로 시작하면 https:를 붙여줌
-          if (imgUrl.startsWith('//')) {
-            imgUrl = 'https:' + imgUrl;
-          }
+        <div class="relative z-10 text-center px-4 animate-fade-in-up">
+            <h1 class="text-5xl md:text-7xl font-extrabold mb-6 tracking-tight drop-shadow-lg">
+                ParkMedia <span class="text-emerald-400">Gallery</span>
+            </h1>
+            <p class="text-lg md:text-2xl text-slate-200 mb-10 font-light drop-shadow-md">
+                지리산의 숨결을 드론의 시선으로 담다
+            </p>
+            
+            <!-- ✨ 버튼: 클릭 시 JS 함수 호출 -->
+            <button onclick="smoothScrollToGallery()" class="inline-block px-8 py-4 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-full transition-all transform hover:scale-105 shadow-lg backdrop-blur-sm bg-opacity-90 cursor-pointer">
+                갤러리 입장하기 ↓
+            </button>
+        </div>
+    </section>
+
+    <!-- 갤러리 섹션 -->
+    <section id="gallery-section" class="min-h-screen p-6 pt-20 bg-slate-900">
+        
+        <div class="max-w-6xl mx-auto mb-10 flex flex-wrap justify-center gap-3">
+            {categories.map((cat) => (
+                <button 
+                class="filter-btn px-5 py-2 rounded-full border border-slate-600 text-slate-300 hover:bg-slate-800 hover:text-white transition-all"
+                data-category={cat}
+                onclick={`filterGallery('${cat}')`}
+                >
+                {cat}
+                </button>
+            ))}
+        </div>
+
+        <div id="gallery-grid" class="max-w-6xl mx-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
+            {posts.map((post) => {
+                const mediaField = post.fields.multymedia || post.fields.media || post.fields.coverImage;
+                let images = [];
+                if (mediaField) {
+                    if (Array.isArray(mediaField)) {
+                        images = mediaField.map(item => {
+                            const url = item?.fields?.file?.url;
+                            return url ? (url.startsWith('//') ? 'https:' + url : url) : null;
+                        }).filter(url => url !== null);
+                    } else if (mediaField?.fields?.file?.url) {
+                        const url = mediaField.fields.file.url;
+                        images = [url.startsWith('//') ? 'https:' + url : url];
+                    }
+                }
+                images = [...new Set(images)];
+                const coverImg = images.length > 0 ? images[0] : null;
+
+                return (
+                <article class="gallery-item bg-slate-800 rounded-2xl overflow-hidden shadow-xl border border-slate-700 group transition-all duration-300 hover:-translate-y-1"
+                    data-category={post.fields.category || "기타"}
+                >
+                    <div class="aspect-video bg-slate-700 relative overflow-hidden cursor-pointer group"
+                        onclick={`openModal(${JSON.stringify(images)}, '${post.fields.title}')`}>
+                    {coverImg ? (
+                        <>
+                            <img src={coverImg} alt={post.fields.title} class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
+                            <div class="absolute top-3 left-3 bg-black/60 text-white text-xs px-2 py-1 rounded backdrop-blur-sm z-10">
+                                {post.fields.category || "기타"}
+                            </div>
+                            {post.fields.youtubeUrl && (
+                                <a href={post.fields.youtubeUrl} target="_blank" onclick="event.stopPropagation()" class="absolute top-3 right-3 bg-red-600 hover:bg-red-700 text-white text-xs px-2 py-1 rounded flex items-center gap-1 z-20 shadow-md transition-colors">
+                                    ▶ 영상 보기
+                                </a>
+                            )}
+                            {images.length > 1 && (
+                                <span class="absolute bottom-2 right-2 bg-black/60 text-white text-xs px-2 py-1 rounded-md backdrop-blur-sm font-bold z-10">
+                                    +{images.length}장
+                                </span>
+                            )}
+                        </>
+                    ) : (
+                        <div class="flex items-center justify-center h-full text-slate-500">이미지 없음</div>
+                    )}
+                    </div>
+
+                    <div class="p-5">
+                    <h2 class="text-lg font-bold text-slate-100 leading-tight">{post.fields.title}</h2>
+                    </div>
+                </article>
+                );
+            })}
+        </div>
+
+        <footer class="mt-20 text-center text-slate-500 text-sm pb-10">
+            - Made by ParkMedia -
+        </footer>
+    </section>
+
+    <dialog id="imageModal" class="bg-transparent p-0 backdrop:bg-black/95 w-full h-full max-w-none max-h-none m-0 items-center justify-center fixed inset-0 z-50 hidden open:flex">
+        <div class="relative w-full h-full flex flex-col items-center justify-center p-4">
+            <button onclick="closeModal()" class="absolute top-6 right-6 text-white text-5xl font-bold hover:text-gray-300 z-50">&times;</button>
+            <img id="modalImage" src="" alt="" class="max-w-full max-h-[80vh] object-contain rounded-lg shadow-2xl transition-opacity duration-300" />
+            <div class="text-center mt-4">
+                <h3 id="modalTitle" class="text-xl font-bold text-white"></h3>
+                <p id="imageCounter" class="text-sm text-gray-400 mt-1"></p>
+            </div>
+            <button id="prevBtn" onclick="prevImage()" class="absolute left-4 top-1/2 -translate-y-1/2 text-white text-6xl hover:text-gray-300 p-4 hidden">‹</button>
+            <button id="nextBtn" onclick="nextImage()" class="absolute right-4 top-1/2 -translate-y-1/2 text-white text-6xl hover:text-gray-300 p-4 hidden">›</button>
+        </div>
+    </dialog>
+
+    <script is:inline>
+// ✨ [수정됨] 100% 확실한 부드러운 스크롤 (수동 애니메이션)
+window.smoothScrollToGallery = () => {
+    const section = document.getElementById('gallery-section');
+    if (!section) return;
+
+    const targetPosition = section.getBoundingClientRect().top + window.pageYOffset;
+    const startPosition = window.pageYOffset;
+    const distance = targetPosition - startPosition;
+    const duration = 800; // 0.8초 동안 이동 (숫자를 늘리면 더 천천히)
+    let startTime = null;
+
+    function animation(currentTime) {
+        if (startTime === null) startTime = currentTime;
+        const timeElapsed = currentTime - startTime;
+        
+        // Ease-in-out 효과 (부드럽게 시작해서 부드럽게 끝남)
+        const run = ease(timeElapsed, startPosition, distance, duration);
+        
+        window.scrollTo(0, run);
+
+        if (timeElapsed < duration) requestAnimationFrame(animation);
+    }
+
+    // 가속도 함수
+    function ease(t, b, c, d) {
+        t /= d / 2;
+        if (t < 1) return c / 2 * t * t + b;
+        t--;
+        return -c / 2 * (t * (t - 2) - 1) + b;
+    }
+
+    requestAnimationFrame(animation);
+};
+
+        // 필터링
+        window.filterGallery = (category) => {
+            const items = document.querySelectorAll('.gallery-item');
+            const btns = document.querySelectorAll('.filter-btn');
+            btns.forEach(btn => {
+                if(btn.innerText === category) {
+                    btn.classList.add('bg-slate-100', 'text-slate-900', 'font-bold');
+                    btn.classList.remove('text-slate-300');
+                } else {
+                    btn.classList.remove('bg-slate-100', 'text-slate-900', 'font-bold');
+                    btn.classList.add('text-slate-300');
+                }
+            });
+            items.forEach(item => {
+                if (category === '전체' || item.getAttribute('data-category') === category) {
+                    item.style.display = 'block';
+                } else {
+                    item.style.display = 'none';
+                }
+            });
+        };
+        document.addEventListener('DOMContentLoaded', () => filterGallery('전체'));
+
+        // 모달 로직
+        const modal = document.getElementById('imageModal');
+        const modalImg = document.getElementById('modalImage');
+        const modalTitle = document.getElementById('modalTitle');
+        const counter = document.getElementById('imageCounter');
+        const prevBtn = document.getElementById('prevBtn');
+        const nextBtn = document.getElementById('nextBtn');
+
+        let currentImages = [];
+        let currentIndex = 0;
+
+        window.openModal = (images, title) => {
+            if (!images || images.length === 0) return;
+            currentImages = images;
+            currentIndex = 0;
+            modalTitle.innerText = title;
+            updateModalImage();
+            modal.showModal();
+            document.addEventListener('keydown', handleKeydown);
+        };
+
+        window.closeModal = () => {
+            modal.close();
+            document.removeEventListener('keydown', handleKeydown);
+        };
+
+        window.prevImage = (e) => {
+            if(e) e.stopPropagation();
+            if (currentIndex > 0) {
+                currentIndex--;
+                updateModalImage();
+            }
+        };
+
+        window.nextImage = (e) => {
+            if(e) e.stopPropagation();
+            if (currentIndex < currentImages.length - 1) {
+                currentIndex++;
+                updateModalImage();
+            }
+        };
+
+        function updateModalImage() {
+            modalImg.src = currentImages[currentIndex];
+            if (currentImages.length > 1) {
+                counter.innerText = `${currentIndex + 1} / ${currentImages.length}`;
+                prevBtn.style.display = currentIndex === 0 ? 'none' : 'block';
+                nextBtn.style.display = currentIndex === currentImages.length - 1 ? 'none' : 'block';
+            } else {
+                counter.innerText = "";
+                prevBtn.style.display = 'none';
+                nextBtn.style.display = 'none';
+            }
         }
 
-        return (
-          <article class="bg-slate-800 rounded-2xl overflow-hidden shadow-xl hover:shadow-2xl transition-all duration-300 hover:-translate-y-1 border border-slate-700 group">
-            
-            <!-- 이미지 영역 -->
-            <div class="aspect-video bg-slate-700 relative overflow-hidden">
-              {imgUrl ? (
-                <img 
-                  src={imgUrl} 
-                  alt={post.fields.title} 
-                  class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
-                />
-              ) : (
-                <div class="flex items-center justify-center h-full text-slate-500">
-                  이미지 없음
-                </div>
-              )}
-            </div>
-
-            <!-- 텍스트 영역 -->
-            <div class="p-6">
-              <h2 class="text-xl font-bold mb-3 text-slate-100 leading-tight">
-                {post.fields.title}
-              </h2>
-              
-              <div class="flex flex-wrap gap-2 mt-4">
-                {/* 유튜브 링크가 있으면 버튼 표시 */}
-                {post.fields.youtubeUrl && (
-                  <a href={post.fields.youtubeUrl} target="_blank" class="inline-flex items-center px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-bold rounded-lg transition-colors">
-                    📺 영상 보기
-                  </a>
-                )}
-              </div>
-            </div>
-          </article>
-        );
-      })}
-    </div>
-
-    <footer class="mt-20 text-center text-slate-500 text-sm pb-10">
-      - Made by Jirisan Studio -
-    </footer>
+        function handleKeydown(e) {
+            if (e.key === 'ArrowLeft') prevImage();
+            if (e.key === 'ArrowRight') nextImage();
+            if (e.key === 'Escape') closeModal();
+        }
+        
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal || e.target.closest('.relative') === modal.firstElementChild) {
+                // 배경 클릭 시 닫지 않음
+            }
+        });
+    </script>
 
   </body>
 </html>
